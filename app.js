@@ -350,6 +350,20 @@ function reimport() {
 imgInput.onchange = (e) => {
   const f = e.target.files[0];
   if (!f) return;
+  const isJson = f.type === 'application/json' || f.name.toLowerCase().endsWith('.json');
+  if (isJson) {
+    const rd = new FileReader();
+    rd.onload = () => {
+      const ok = importPaletteJSON(rd.result);
+      if (!ok) flashMeta("Invalid palette JSON — expected {\"palette\":[pos,\"rrggbb\", …]}");
+    };
+    rd.readAsText(f);
+    // image preview no longer applies
+    preview.classList.add("hidden");
+    preview.removeAttribute("src");
+    lastImgSrc = null;
+    return;
+  }
   const rd = new FileReader();
   rd.onload = () => {
     lastImgSrc = rd.result;
@@ -361,6 +375,56 @@ imgInput.onchange = (e) => {
 };
 
 ["nColors", "order", "weight"].forEach(id => $(id).addEventListener("change", reimport));
+
+// ---- Import existing WLED palette JSON (edit existing palettes) ----
+// Accepts the editor's own output format {"palette":[pos,"rrggbb", …]},
+// a bare [pos,"hex",…] array, or [{pos,hex}] objects.
+function importPaletteJSON(text) {
+  let data;
+  try { data = JSON.parse(text); }
+  catch { return false; }
+
+  let arr = null;
+  if (Array.isArray(data)) arr = data;
+  else if (data && Array.isArray(data.palette)) arr = data.palette;
+  else if (data && Array.isArray(data.colors)) arr = data.colors;
+  if (!arr) return false;
+
+  const newStops = [];
+  const normHex = (h) => String(h).replace("#", "").toUpperCase();
+  const validHex = (h) => /^[0-9A-F]{6}$/.test(h);
+
+  if (arr.length >= 2 && typeof arr[0] === "number" && typeof arr[1] === "string") {
+    // flat [pos, "hex", pos, "hex", …]
+    for (let i = 0; i + 1 < arr.length; i += 2) {
+      const pos = arr[i], hex = normHex(arr[i + 1]);
+      if (Number.isInteger(pos) && validHex(hex)) newStops.push({ pos, hex });
+    }
+  } else if (arr.length && typeof arr[0] === "object" && arr[0] !== null) {
+    // [{pos, hex}, …]
+    for (const e of arr) {
+      if (e && Number.isInteger(e.pos) && typeof e.hex === "string") {
+        const hex = normHex(e.hex);
+        if (validHex(hex)) newStops.push({ pos: e.pos, hex });
+      }
+    }
+  }
+  if (newStops.length < 2) return false;
+
+  stops = newStops;
+  selected = 0;
+  render();
+  return true;
+}
+
+// Briefly surface import errors in the meta line under the JSON output.
+let metaTimer = null;
+function flashMeta(msg) {
+  const prev = meta.textContent;
+  meta.textContent = msg;
+  clearTimeout(metaTimer);
+  metaTimer = setTimeout(() => { meta.textContent = prev; }, 3000);
+}
 
 // ---- Init ----
 render();
