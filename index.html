@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WLED Palette Editor</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            bg: "#0f1419",
+            panel: "#1a2129",
+            panel2: "#222c36",
+            line: "#2d3a45",
+            ink: "#e6edf3",
+            muted: "#8b97a3",
+            accent: "#4cc2a0",
+          },
+        },
+      },
+    };
+  </script>
+  <!-- Plain CSS for JS-generated elements (robust, no @apply CDN dependency) -->
+  <style>
+    .stop-handle {
+      position: absolute; top: 50%; width: 16px; height: 60px;
+      transform: translate(-50%, -50%); border-radius: 5px;
+      background: #fff; border: 2px solid rgba(0,0,0,0.35);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.4); cursor: grab; z-index: 2;
+    }
+    .stop-handle:active { cursor: grabbing; }
+    .stop-handle.selected { outline: 2px solid #4cc2a0; outline-offset: 1px; z-index: 3; }
+
+    .pos-label {
+      position: absolute; transform: translateX(-50%);
+      background: #222c36; border: 1px solid #2d3a45; border-radius: 5px;
+      font-size: 12px; padding: 3px 7px; color: #8b97a3; white-space: nowrap;
+    }
+
+    .preset-swatch {
+      width: 46px; height: 30px; border-radius: 6px; border: 1px solid #2d3a45;
+      cursor: pointer; transition: transform 0.1s ease;
+    }
+    .preset-swatch:hover { transform: scale(1.1); }
+
+    .stop-row {
+      display: flex; align-items: center; gap: 8px;
+      background: #222c36; border: 1px solid #2d3a45; border-radius: 8px; padding: 6px;
+    }
+    .stop-row.selected { border-color: #4cc2a0; }
+    .stop-color {
+      width: 34px; height: 34px; border-radius: 6px; border: 1px solid #2d3a45;
+      cursor: pointer; flex-shrink: 0;
+    }
+    .stop-hex {
+      flex: 1; min-width: 0; background: #1a2129; border: 1px solid #2d3a45;
+      border-radius: 6px; color: #e6edf3; padding: 7px 10px;
+      font-family: ui-monospace, monospace; font-size: 13px; text-transform: uppercase;
+    }
+    .stop-pos {
+      width: 60px; background: #1a2129; border: 1px solid #2d3a45; border-radius: 6px;
+      color: #e6edf3; text-align: center; padding: 7px 4px; font-size: 13px;
+    }
+    .stop-hex:focus, .stop-pos:focus { outline: none; border-color: #4cc2a0; }
+    .stop-pos:disabled { opacity: 0.5; cursor: not-allowed; }
+    .stop-del {
+      width: 28px; height: 28px; background: transparent; border: 0; color: #8b97a3;
+      font-size: 18px; cursor: pointer; border-radius: 6px; flex-shrink: 0;
+    }
+    .stop-del:hover { background: #5a2424; color: #ff8a8a; }
+    .stop-del:disabled { opacity: 0.25; cursor: not-allowed; }
+  </style>
+</head>
+<body class="bg-bg text-ink min-h-screen flex flex-col font-sans">
+  <header class="flex items-center justify-between px-7 py-4 border-b border-line">
+    <h1 class="text-lg font-semibold tracking-wide">WLED Palette Editor</h1>
+    <div class="flex gap-2" id="presets" title="Example palettes"></div>
+  </header>
+
+  <main class="p-7 flex-1">
+    <!-- Image → palette (pywal16-style extraction) -->
+    <section class="mb-6 flex flex-wrap items-end gap-5 bg-panel border border-line rounded-[10px] p-4">
+      <div>
+        <label class="block text-[11px] tracking-[1px] text-muted mb-2">IMAGE → PALETTE</label>
+        <input type="file" id="imgInput" accept="image/*"
+          class="text-sm text-muted file:mr-3 file:py-2 file:px-4 file:rounded-md file:border-0 file:bg-accent file:text-[#06231b] file:font-semibold file:cursor-pointer">
+      </div>
+      <div>
+        <label class="block text-[11px] text-muted mb-1">Colors</label>
+        <input type="number" id="nColors" min="3" max="16" value="8"
+          class="w-20 bg-panel2 border border-line rounded-md text-ink text-center px-2 py-2 text-sm focus:outline-none focus:border-accent">
+      </div>
+      <div>
+        <label class="block text-[11px] text-muted mb-1">Order</label>
+        <select id="order" class="bg-panel2 border border-line rounded-md text-ink px-2 py-2 text-sm focus:outline-none focus:border-accent">
+          <option value="hue">Hue</option>
+          <option value="brightness">Brightness</option>
+          <option value="popularity">Popularity</option>
+        </select>
+      </div>
+      <label class="flex items-center gap-2 text-sm text-ink cursor-pointer pb-2">
+        <input type="checkbox" id="weight" checked class="accent-accent w-4 h-4">
+        Weight by frequency
+      </label>
+      <img id="preview" class="h-12 rounded-md border border-line ml-auto hidden" alt="preview">
+    </section>
+
+    <!-- Gradient bar with draggable stops -->
+    <section class="mb-7">
+      <div class="relative h-[46px] cursor-copy" id="track">
+        <div class="absolute inset-0 rounded-lg border border-line" id="bar"></div>
+        <!-- stop handles injected here -->
+      </div>
+      <div class="relative h-[26px] mt-1.5" id="posLabels"></div>
+      <p class="text-muted text-xs mt-3.5">Click the bar to add a stop · drag handles to move · positions are 0–255 (WLED native)</p>
+    </section>
+
+    <div class="grid grid-cols-1 md:grid-cols-[240px_1fr_1fr] gap-5 items-start">
+      <!-- Color picker -->
+      <section class="bg-panel border border-line rounded-[10px] p-4">
+        <label class="block text-[11px] tracking-[1px] text-muted mb-3">PICKER</label>
+        <div class="relative w-full h-[170px] rounded-lg cursor-crosshair overflow-hidden" id="svBox">
+          <div class="absolute inset-0" style="background:linear-gradient(to right,#fff,rgba(255,255,255,0))"></div>
+          <div class="absolute inset-0" style="background:linear-gradient(to top,#000,rgba(0,0,0,0))"></div>
+          <div class="absolute w-4 h-4 border-2 border-white rounded-full -translate-x-1/2 -translate-y-1/2 pointer-events-none z-[2]"
+               style="box-shadow:0 0 0 1px rgba(0,0,0,0.4)" id="svCursor"></div>
+        </div>
+      </section>
+
+      <!-- Hex + RGB + hue -->
+      <section class="bg-panel border border-line rounded-[10px] p-4">
+        <label class="block text-[11px] tracking-[1px] text-muted mb-3">HEX</label>
+        <input type="text" id="hexInput" maxlength="7" spellcheck="false"
+          class="w-full bg-panel2 border border-line rounded-[7px] text-ink text-[15px] px-3 py-[9px] font-mono uppercase focus:outline-none focus:border-accent">
+        <div class="flex gap-2 my-3">
+          <div class="flex-1 text-center">
+            <span class="block text-[11px] text-muted mb-1">R</span>
+            <input type="number" id="rIn" min="0" max="255"
+              class="w-full bg-panel2 border border-line rounded-md text-ink text-center px-1 py-[7px] text-sm focus:outline-none focus:border-accent">
+          </div>
+          <div class="flex-1 text-center">
+            <span class="block text-[11px] text-muted mb-1">G</span>
+            <input type="number" id="gIn" min="0" max="255"
+              class="w-full bg-panel2 border border-line rounded-md text-ink text-center px-1 py-[7px] text-sm focus:outline-none focus:border-accent">
+          </div>
+          <div class="flex-1 text-center">
+            <span class="block text-[11px] text-muted mb-1">B</span>
+            <input type="number" id="bIn" min="0" max="255"
+              class="w-full bg-panel2 border border-line rounded-md text-ink text-center px-1 py-[7px] text-sm focus:outline-none focus:border-accent">
+          </div>
+        </div>
+        <div class="relative h-3.5 rounded-[7px] mt-1.5 cursor-pointer" id="hueSlider"
+          style="background:linear-gradient(to right,#ff0000 0%,#ffff00 17%,#00ff00 33%,#00ffff 50%,#0000ff 67%,#ff00ff 83%,#ff0000 100%)">
+          <div class="absolute top-1/2 w-2 h-5 bg-white border border-black/40 rounded-[3px] -translate-x-1/2 -translate-y-1/2 pointer-events-none" id="hueCursor"></div>
+        </div>
+      </section>
+
+      <!-- Stops list -->
+      <section class="bg-panel border border-line rounded-[10px] p-4">
+        <label class="block text-[11px] tracking-[1px] text-muted mb-3">STOPS</label>
+        <div class="flex flex-col gap-2" id="stopsList"></div>
+      </section>
+    </div>
+  </main>
+
+  <!-- Output -->
+  <footer class="bg-[#131b22] border-t border-line px-7 pt-5 pb-6">
+    <div class="flex justify-between items-baseline mb-3">
+      <span class="text-[13px] font-semibold tracking-[1px] text-accent">WLED PALETTE JSON</span>
+      <span class="text-xs text-muted" id="meta"></span>
+    </div>
+    <pre class="bg-[#0c1217] border border-line rounded-lg px-4 py-3.5 font-mono text-[13px] text-[#b8e6d6] overflow-x-auto whitespace-pre-wrap break-all" id="jsonOut"></pre>
+    <div class="flex gap-2.5 mt-3.5">
+      <button id="copyBtn" class="bg-accent border border-accent text-[#06231b] font-semibold px-[18px] py-2.5 rounded-lg text-sm cursor-pointer hover:bg-[#5fd4b2]">Copy JSON</button>
+      <button id="downloadBtn" class="bg-panel2 border border-line text-ink px-[18px] py-2.5 rounded-lg text-sm cursor-pointer hover:bg-[#2c3845]">Download palette0.json</button>
+    </div>
+  </footer>
+
+  <script src="jswal.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
