@@ -184,7 +184,10 @@
       <span class="text-[13px] font-semibold tracking-[1px] text-accent">WLED PALETTE JSON</span>
       <span class="text-xs text-muted" id="meta"></span>
     </div>
-    <pre class="bg-[#0c1217] border border-line rounded-lg px-4 py-3.5 font-mono text-[13px] text-[#b8e6d6] overflow-x-auto whitespace-pre-wrap break-all" id="jsonOut"></pre>
+    <pre class="bg-[#0c1217] border border-line rounded-lg px-4 py-3.5 font-mono text-[13px] text-[#b8e6d6] overflow-x-auto whitespace-pre-wrap break-all focus:outline-none focus:border-accent"
+         id="jsonOut" contenteditable="true" spellcheck="false"
+         title="Paste a palette JSON here to load it into the editor"></pre>
+    <p class="text-muted text-xs mt-2">Paste a palette JSON into the box above to load and edit it.</p>
     <div class="flex gap-2.5 mt-3.5">
       <button id="copyBtn" class="bg-accent border border-accent text-[#06231b] font-semibold px-[18px] py-2.5 rounded-lg text-sm cursor-pointer hover:bg-[#5fd4b2]">Copy JSON</button>
       <button id="downloadBtn" class="bg-panel2 border border-line text-ink px-[18px] py-2.5 rounded-lg text-sm cursor-pointer hover:bg-[#2c3845]">Download palette0.json</button>

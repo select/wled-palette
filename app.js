@@ -176,7 +176,9 @@ function renderOutput() {
   const sorted = [...stops].sort((a, b) => a.pos - b.pos);
   const arr = [];
   sorted.forEach(s => { arr.push(s.pos, `"${s.hex.toLowerCase()}"`); });
-  jsonOut.textContent = `{"palette":[${arr.join(",")}]}`;
+  const text = `{"palette":[${arr.join(",")}]}`;
+  jsonOut.textContent = text;
+  renderOutput.__last = text;
   meta.textContent = `${stops.length} stops`;
 }
 
@@ -375,6 +377,30 @@ imgInput.onchange = (e) => {
 };
 
 ["nColors", "order", "weight"].forEach(id => $(id).addEventListener("change", reimport));
+
+// ---- Paste palette JSON into the output box to load it ----
+// The jsonOut <pre> is contenteditable. Pasted text is parsed with the same
+// importPaletteJSON() used for file imports; on success the editor reloads and
+// the box is rewritten with the canonical output. Ctrl+Enter / blur also parse.
+function loadFromJsonOut() {
+  const ok = importPaletteJSON(jsonOut.textContent);
+  if (!ok) flashMeta("Invalid palette JSON — expected {\"palette\":[pos,\"rrggbb\", …]}");
+  return ok;
+}
+jsonOut.addEventListener("paste", (e) => {
+  // Insert plain text only, then parse.
+  e.preventDefault();
+  const text = (e.clipboardData || window.clipboardData).getData("text");
+  document.execCommand("insertText", false, text);
+  loadFromJsonOut();
+});
+jsonOut.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); loadFromJsonOut(); }
+});
+jsonOut.addEventListener("blur", () => {
+  // If the box no longer matches the current output, try to parse it.
+  if (jsonOut.textContent.trim() && jsonOut.textContent !== renderOutput.__last) loadFromJsonOut();
+});
 
 // ---- Import existing WLED palette JSON (edit existing palettes) ----
 // Accepts the editor's own output format {"palette":[pos,"rrggbb", …]},
